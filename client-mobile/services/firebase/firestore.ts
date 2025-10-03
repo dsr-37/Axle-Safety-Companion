@@ -120,6 +120,22 @@ export class FirestoreService {
     }
   }
 
+  // New: Submit hazard report to 'hazard_reports' collection (MVP schema)
+  static async submitHazardReportCloud(report: any): Promise<string> {
+    try {
+      const data = {
+        ...report,
+        createdAt: serverTimestamp(),
+        status: report.status || 'pending',
+      };
+      const docRef = await addDoc(collection(db, 'hazard_reports'), data);
+      return docRef.id;
+    } catch (error) {
+      console.error('Error submitting hazard report to hazard_reports:', error);
+      throw new Error('Failed to submit hazard report');
+    }
+  }
+
   static async getHazardReports(userId?: string): Promise<HazardReport[]> {
     try {
       const hazardReportsCollection = collection(db, 'hazardReports');

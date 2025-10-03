@@ -1,6 +1,7 @@
 import React, { useState, forwardRef, useImperativeHandle } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { ClayButton } from '../ui/ClayButton';
 import { ClayColors } from '../../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,7 +46,20 @@ export const CameraCapture = forwardRef<any, CameraCaptureProps>(({ onImageCaptu
         const uris = result.assets
           .filter(a => a.type === 'image' && typeof a.uri === 'string')
           .map(a => a.uri);
-        if (uris.length > 0) onImageCapture(uris);
+        if (uris.length > 0) {
+          // Compress images immediately for faster upload later
+          const compressed: string[] = [];
+          for (const uri of uris) {
+            try {
+              const m = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: 1280 } }], { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG });
+              compressed.push(m.uri);
+            } catch (err) {
+              console.warn('Image compression failed, using original', err);
+              compressed.push(uri);
+            }
+          }
+          onImageCapture(compressed);
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to take photo. Please try again.');
@@ -98,7 +112,16 @@ export const CameraCapture = forwardRef<any, CameraCaptureProps>(({ onImageCaptu
         const videoUris: string[] = [];
 
         for (const asset of result.assets) {
-          if (asset.type === 'image' && typeof asset.uri === 'string') imageUris.push(asset.uri);
+          if (asset.type === 'image' && typeof asset.uri === 'string') {
+            // compress each selected image
+            try {
+              const m = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: { width: 1280 } }], { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG });
+              imageUris.push(m.uri);
+            } catch (err) {
+              console.warn('Image compression failed on selection, using original', err);
+              imageUris.push(asset.uri);
+            }
+          }
           if (asset.type === 'video' && typeof asset.uri === 'string') videoUris.push(asset.uri);
         }
 

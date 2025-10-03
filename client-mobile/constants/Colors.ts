@@ -56,9 +56,9 @@ export const ClayTheme = {
     light: ClayColors.gray,
   },
   textOnDark: {
-    primary: 'rgba(255, 255, 255, 0.92)',
-    secondary: 'rgba(255, 255, 255, 0.74)',
-    muted: 'rgba(255, 255, 255, 0.56)',
+    primary: 'rgba(255, 255, 255, 1)',
+    secondary: 'rgba(255, 255, 255, 0.82)',
+    muted: 'rgba(255, 255, 255, 0.61)',
   },
   border: ClayColors.gray,
   shadow: {

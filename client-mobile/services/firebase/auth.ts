@@ -6,6 +6,7 @@ import {
   AuthError
 } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
+import { fetchSignInMethodsForEmail } from 'firebase/auth';
 
 export class AuthService {
   static async signInWithEmail(email: string, password: string): Promise<User> {
@@ -23,6 +24,17 @@ export class AuthService {
       return userCredential.user;
     } catch (error) {
       throw this.handleAuthError(error as AuthError);
+    }
+  }
+
+  static async emailHasAccount(email: string): Promise<boolean> {
+    try {
+      const methods = await fetchSignInMethodsForEmail(auth, email);
+      return Array.isArray(methods) && methods.length > 0;
+    } catch (error) {
+      // If the request fails (network), conservatively return false so caller can attempt registration and surface errors
+      console.warn('Error checking email existence:', error);
+      return false;
     }
   }
 

@@ -11,6 +11,9 @@ import { CameraCapture } from '../../components/media/CameraCapture';
 import { ClayColors, ClayTheme } from '../../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
+import * as CloudinaryService from '../../services/media/cloudinary';
+import { FirestoreService } from '../../services/firebase/firestore';
+import { OfflineSyncService } from '../../services/storage/offlineSync';
 import * as Location from 'expo-location';
 
 interface HazardReport {
@@ -33,7 +36,7 @@ interface HazardReport {
 const SPACING = 20;
 
 export default function HazardReportScreen() {
-  const { userProfile } = useAuth();
+  const { userProfile, user } = useAuth();
   const [description, setDescription] = useState('');
   const [audioUri, setAudioUri] = useState<string>();
   const [imageUris, setImageUris] = useState<string[]>([]);
@@ -50,6 +53,39 @@ export default function HazardReportScreen() {
 
   const getCurrentLocation = async () => {
     try {
+      const isOnline = await OfflineSyncService.checkInternetConnection();
+
+      // Build the base payload (without media URLs yet)
+      const basePayload: any = {
+        userId: userProfile?.id,
+        userEmail: user?.email,
+        userName: userProfile?.name,
+        description: description.trim(),
+        location: currentLocation ? {
+          latitude: currentLocation.coords.latitude,
+          longitude: currentLocation.coords.longitude,
+          accuracy: currentLocation.coords.accuracy ?? 0,
+        } : undefined,
+        createdAt: new Date(),
+        status: 'pending',
+        priority: determinePriority(description),
+      };
+
+      // If offline, add to offline queue with local media URIs and return success immediately
+      if (!isOnline) {
+        const mediaFiles: any[] = [];
+        imageUris.forEach((uri, idx) => mediaFiles.push({ type: 'image', uri, index: idx }));
+        videoUris.forEach((uri, idx) => mediaFiles.push({ type: 'video', uri, index: idx }));
+        if (audioUri) mediaFiles.push({ type: 'audio', uri: audioUri });
+
+        await OfflineSyncService.addToQueue({ type: 'hazard_report', data: { report: basePayload, mediaFiles } });
+
+        Alert.alert('Saved offline', 'Your report was saved locally and will be uploaded when internet is available.', [{ text: 'OK', onPress: () => router.back() }]);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Online: proceed to upload media and save
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission denied', 'Location access is required for hazard reporting');
@@ -72,28 +108,63 @@ export default function HazardReportScreen() {
     setIsSubmitting(true);
 
     try {
-      const report: Partial<HazardReport> = {
+  // 1) Upload media to Cloudinary
+      const uploadedImages: any[] = [];
+      const uploadedVideos: any[] = [];
+      let uploadedAudio: any | undefined;
+
+      // Upload images (compress + upload)
+      await Promise.all(imageUris.map(async (uri) => {
+        try {
+          const res = await CloudinaryService.uploadImage(uri);
+          uploadedImages.push(res);
+        } catch (err) {
+          console.warn('Image upload failed for', uri, err);
+        }
+      }));
+
+      // Upload videos (upload as-is)
+      await Promise.all(videoUris.map(async (uri) => {
+        try {
+          const res = await CloudinaryService.uploadVideo(uri);
+          uploadedVideos.push(res);
+        } catch (err) {
+          console.warn('Video upload failed for', uri, err);
+        }
+      }));
+
+      // Upload audio (single)
+      if (audioUri) {
+        try {
+          uploadedAudio = await CloudinaryService.uploadAudio(audioUri);
+        } catch (err) {
+          console.warn('Audio upload failed', err);
+        }
+      }
+
+      // 2) Build Firestore document payload for hazard_reports collection
+      const payload = {
         userId: userProfile?.id,
+  userEmail: user?.email,
+        userName: userProfile?.name,
         description: description.trim(),
-        audioUri,
-        imageUris,
-        videoUris,
         location: currentLocation ? {
           latitude: currentLocation.coords.latitude,
           longitude: currentLocation.coords.longitude,
-          accuracy: currentLocation.coords.accuracy ?? 0, // Default to 0 if null
+          accuracy: currentLocation.coords.accuracy ?? 0,
         } : undefined,
-        timestamp: new Date(),
+        media: {
+          images: uploadedImages.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes })),
+          videos: uploadedVideos.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes, duration: u.duration })),
+          audio: uploadedAudio ? { url: uploadedAudio.url, publicId: uploadedAudio.publicId, bytes: uploadedAudio.bytes, duration: uploadedAudio.duration } : undefined,
+        },
+        createdAt: new Date(),
         status: 'pending',
-        priority: determinePriority(description), // AI would analyze this in production
+        priority: determinePriority(description),
       };
 
-      // TODO: Upload files to Firebase Storage
-      // TODO: Save report to Firestore
-      // TODO: Send notification to supervisors
-      // For now, simulate success
-      
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate upload
+      // 3) Save to Firestore 'hazard_reports' collection
+      const id = await FirestoreService.submitHazardReportCloud(payload);
 
       Alert.alert(
         'Report Submitted',

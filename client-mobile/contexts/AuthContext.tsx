@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { auth, db } from '../firebaseConfig';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+  deleteUser,
+} from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface UserProfile {
@@ -22,6 +30,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   updateUserProfile: (profile: Partial<UserProfile>) => Promise<void>;
 }
 
@@ -185,6 +194,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await AsyncStorage.removeItem('userProfile');
   };
 
+  const deleteAccount = async (password: string) => {
+    if (!auth.currentUser) {
+      throw new Error('No authenticated user found.');
+    }
+
+    try {
+      const currentUser = auth.currentUser;
+      const email = currentUser.email;
+      if (!email) throw new Error('Current user has no email associated');
+
+      const credential = EmailAuthProvider.credential(email, password);
+      // Reauthenticate the user with the provided password
+      await reauthenticateWithCredential(currentUser, credential);
+
+      // Delete Firestore user document if present
+      try {
+        await deleteDoc(doc(db, 'users', currentUser.uid));
+      } catch (err) {
+        // Non-fatal - log and continue with auth deletion
+        console.warn('Failed to delete user profile document:', err);
+      }
+
+      // Delete auth user
+      await deleteUser(currentUser);
+
+      // Clear local state and cache
+      setUser(null);
+      setUserProfile(null);
+      await AsyncStorage.removeItem('userProfile');
+    } catch (err: any) {
+      console.error('Failed to delete account:', err);
+      throw err instanceof Error ? err : new Error(String(err));
+    }
+  };
+
   const updateUserProfile = async (updates: Partial<UserProfile>) => {
     if (!user) {
       throw new Error('No authenticated user found. Please sign in again.');
@@ -249,6 +293,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login,
     register,
     logout,
+    deleteAccount,
     updateUserProfile,
   };
 

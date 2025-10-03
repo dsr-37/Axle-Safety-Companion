@@ -94,20 +94,55 @@ export class OfflineSyncService {
         break;
         
       case 'hazard_report':
-        // Upload media files first if they exist
-        const reportId = await FirestoreService.submitHazardReport(action.data.report);
-        
-        if (action.data.mediaFiles) {
-          for (const media of action.data.mediaFiles) {
-            if (media.type === 'audio') {
-              await FirebaseStorageService.uploadAudio(media.uri, action.data.userId, reportId);
-            } else if (media.type === 'image') {
-              await FirebaseStorageService.uploadImage(media.uri, action.data.userId, reportId, media.index);
-            } else if (media.type === 'video') {
-              await FirebaseStorageService.uploadVideo(media.uri, action.data.userId, reportId, media.index);
-            }
+        // For queued hazard reports: upload media to Cloudinary then save to Firestore (hazard_reports)
+        const reportPayload = action.data.report;
+        const mediaFiles = action.data.mediaFiles || [];
+
+        const uploadedImages: any[] = [];
+        const uploadedVideos: any[] = [];
+        let uploadedAudio: any | undefined;
+
+        // Upload images
+        for (const media of mediaFiles.filter((m: any) => m.type === 'image')) {
+          try {
+            const res = await import('../media/cloudinary').then(mod => mod.uploadImage(media.uri));
+            uploadedImages.push(res);
+          } catch (err) {
+            console.warn('Offline image upload failed', err);
+            throw err;
           }
         }
+
+        // Upload videos
+        for (const media of mediaFiles.filter((m: any) => m.type === 'video')) {
+          try {
+            const res = await import('../media/cloudinary').then(mod => mod.uploadVideo(media.uri));
+            uploadedVideos.push(res);
+          } catch (err) {
+            console.warn('Offline video upload failed', err);
+            throw err;
+          }
+        }
+
+        // Upload audio
+        const audioMedia = mediaFiles.find((m: any) => m.type === 'audio');
+        if (audioMedia) {
+          try {
+            uploadedAudio = await import('../media/cloudinary').then(mod => mod.uploadAudio(audioMedia.uri));
+          } catch (err) {
+            console.warn('Offline audio upload failed', err);
+            throw err;
+          }
+        }
+
+        // Attach uploaded media metadata to payload and submit to Firestore
+        reportPayload.media = {
+          images: uploadedImages.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes })),
+          videos: uploadedVideos.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes, duration: u.duration })),
+          audio: uploadedAudio ? { url: uploadedAudio.url, publicId: uploadedAudio.publicId, bytes: uploadedAudio.bytes, duration: uploadedAudio.duration } : undefined,
+        };
+
+        await FirestoreService.submitHazardReportCloud(reportPayload);
         break;
         
       case 'profile_update':

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { ClayCard } from '../../../components/ui/ClayCard';
 import { ClayButton } from '../../../components/ui/ClayButton';
 import { ClayInput } from '../../../components/ui/ClayInput';
+import { ClayModal } from '../../../components/ui/ClayModal';
 import { GradientBackground } from '../../../components/ui/GradientBackground';
 import { ClayColors, ClayTheme } from '../../../constants/Colors';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -14,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 const SPACING = 20;
 
 export default function ProfileScreen() {
-  const { userProfile, updateUserProfile, logout } = useAuth();
+  const { userProfile, updateUserProfile, logout, deleteAccount } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({
     name: userProfile?.name || '',
@@ -56,18 +57,28 @@ export default function ProfileScreen() {
     );
   };
 
-  const changeRole = () => {
-    Alert.alert(
-      'Change Role',
-      'You will be redirected to role selection. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Continue',
-          onPress: () => router.push('/(auth)/role-selection')
-        }
-      ]
-    );
+  // Role can no longer be changed from profile. Users must delete account and re-signup.
+
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const confirmDelete = () => setDeleteModalVisible(true);
+
+  const performDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteAccount(deletePassword);
+      // Show success and navigate to signup after 250ms
+      Alert.alert('Account Deleted', 'Your account has been deleted. You will be redirected to Sign Up.');
+      setTimeout(() => router.replace('/(auth)/signup'), 250);
+    } catch (err: any) {
+      console.error('Delete account failed', err);
+      Alert.alert('Delete Failed', err.message || 'Unable to delete account. Please check your password and try again.');
+    } finally {
+      setIsDeleting(false);
+      setDeletePassword('');
+      setDeleteModalVisible(false);
+    }
   };
 
   const getRoleInfo = () => {
@@ -162,14 +173,6 @@ export default function ProfileScreen() {
           <ClayCard style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Roles & Responsibilities</Text>
-            <ClayButton
-              title="Change"
-              variant="primary"
-              size="small"
-              fullWidth={false}
-              style={styles.sectionAction}
-              onPress={changeRole}
-            />
           </View>
           
           {roleInfo && (
@@ -181,6 +184,9 @@ export default function ProfileScreen() {
               <Text style={styles.roleDescription}>{roleInfo.description}</Text>
             </View>
           )}
+          <Text style={styles.roleNotice}>
+            To change your role you must delete your account and sign up again with the same email.
+          </Text>
         </ClayCard>
 
           <ClayCard style={styles.sectionCard}>
@@ -277,6 +283,29 @@ export default function ProfileScreen() {
               icon={<Ionicons name="log-out" size={20} color={ClayColors.white} />}
             />
           </ClayCard>
+          <ClayCard style={[styles.logoutCard, { marginTop: 8 }] }>
+            <ClayButton
+              title="Delete Account"
+              variant="danger"
+              size="medium"
+              onPress={confirmDelete}
+              icon={<Ionicons name="trash" size={18} color={ClayColors.white} />}
+            />
+          </ClayCard>
+
+          {deleteModalVisible && (
+            <ClayModal visible={deleteModalVisible} onClose={() => setDeleteModalVisible(false)}>
+              <View style={{ gap: 12, backgroundColor: '#272727ff', padding: 25, borderRadius: 10 }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: ClayTheme.textOnDark.primary }}>Delete Account</Text>
+                <Text style={{ color: ClayTheme.textOnDark.secondary }}>This action is permanent. To delete your account, confirm by entering your password below.</Text>
+                <ClayInput label="Password" value={deletePassword} onChangeText={setDeletePassword} secureTextEntry />
+                <View style={{ flexDirection: 'column', gap: 8, marginTop: 8 }}>
+                  <ClayButton title="Cancel" variant="secondary" onPress={() => setDeleteModalVisible(false)} />
+                  <ClayButton title={isDeleting ? 'Deleting...' : 'Delete'} variant="danger" onPress={performDelete} />
+                </View>
+              </View>
+            </ClayModal>
+          )}
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
@@ -375,6 +404,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: ClayTheme.textOnDark.secondary,
     lineHeight: 20,
+  },
+  roleNotice: {
+    marginTop: 8,
+    fontSize: 12,
+    color: ClayTheme.textOnDark.muted,
+    lineHeight: 18,
   },
   preferenceList: {
     gap: 16,

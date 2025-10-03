@@ -18,6 +18,22 @@ export default function SignupScreen() {
     setIsLoading(true);
     try {
       navigatedRef.current = false;
+      // Check if the email already has an auth account in Firebase first
+      try {
+        // Import here to avoid circular dependency at module load time
+        const { AuthService } = await import('../../services/firebase/auth');
+        const exists = await AuthService.emailHasAccount(data.email);
+        if (exists) {
+          throw new Error('An account already exists with this email address');
+        }
+      } catch (checkErr) {
+        // If the helper threw an error that's a string/Error, surface it; otherwise continue to attempt register which will error
+        if (checkErr instanceof Error && /already exists/.test(checkErr.message)) {
+          throw checkErr;
+        }
+        // Otherwise, ignore and let register attempt proceed (network errors etc.)
+      }
+
       await register(data.name, data.email, data.password);
       // Navigate to role selection similarly to the login flow, but target the role page
       InteractionManager.runAfterInteractions(() => {
