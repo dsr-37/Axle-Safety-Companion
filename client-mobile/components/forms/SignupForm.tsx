@@ -8,9 +8,10 @@ import { validateEmail } from '../../utils/validationUtils';
 interface Props {
   onSubmit: (data: { name: string; email: string; password: string }) => void;
   isLoading: boolean;
+  onEmailChange?: (email: string) => void;
 }
 
-export const SignupForm: React.FC<Props> = ({ onSubmit, isLoading }) => {
+export const SignupForm: React.FC<Props> = ({ onSubmit, isLoading, onEmailChange }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,11 +31,16 @@ export const SignupForm: React.FC<Props> = ({ onSubmit, isLoading }) => {
     onSubmit({ name, email, password });
   };
 
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (onEmailChange) onEmailChange(text);
+  };
+
   return (
     <View style={styles.form}>
       <Text style={styles.title}>Create account</Text>
       <ClayInput label="Full name" value={name} onChangeText={setName} error={errors.name} />
-      <ClayInput label="Email" value={email} onChangeText={setEmail} error={errors.email} keyboardType="email-address" />
+  <ClayInput label="Email" value={email} onChangeText={handleEmailChange} error={errors.email} keyboardType="email-address" />
       <ClayInput label="Password" value={password} onChangeText={setPassword} error={errors.password} secureTextEntry />
 
       <ClayButton title={isLoading ? 'Creating...' : 'Sign Up'} onPress={submit} disabled={isLoading} variant="primary" />

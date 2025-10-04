@@ -6,20 +6,27 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ClayTheme } from '../constants/Colors';
 
 export default function IndexScreen() {
-  const { user, userProfile, loading } = useAuth();
-
+  const { user, userProfile, loading, profileLoaded } = useAuth();
   useEffect(() => {
-    // This effect runs only when the loading state changes from true to false
-    if (!loading) {
-      if (!user) {
-        router.replace('/(auth)/login');
-      } else if (!userProfile?.role) {
-        router.replace('/(auth)/role-selection');
-      } else {
-        router.replace('/(main)/(tabs)/home');
-      }
+    // Only decide route once the auth loading has finished and we've attempted loading a profile.
+    if (loading) return;
+
+    if (!user) {
+      router.replace('/(auth)/login');
+      return;
     }
-  }, [loading, user, userProfile]); // Depend on loading, user, and profile
+
+    // If we haven't attempted to load the profile yet (profileLoaded === false), stay on spinner.
+    if (!profileLoaded) return;
+
+    if (!userProfile?.role) {
+      router.replace('/(auth)/role-selection');
+    } else if (userProfile?.role === 'supervisor') {
+      router.replace('/(supervisor)/(tabs)/home');
+    } else {
+      router.replace('/(main)/(tabs)/home');
+    }
+  }, [loading, profileLoaded, user, userProfile]);
 
   // While loading, show a spinner and prevent any navigation attempts
   return (

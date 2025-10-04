@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -9,6 +9,10 @@ import { ClayButton } from '../../../components/ui/ClayButton';
 import { ClayCard } from '../../../components/ui/ClayCard';
 import { VideoPlayer } from '../../../components/media/VideoPlayer';
 import { useAuth } from '../../../contexts/AuthContext';
+import { FirestoreService } from '../../../services/firebase/firestore';
+import { ROLE_CHECKLISTS } from '../../../constants/Checklists';
+import { doc, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from '../../../firebaseConfig';
 import { ClayColors, ClayTheme } from '../../../constants/Colors';
 import { SAFETY_VIDEOS, SafetyVideo, getDailyVideo } from '../../../constants/SafetyVideos';
 
@@ -18,12 +22,85 @@ export default function HomeScreen() {
   const { userProfile } = useAuth();
   const [todayVideo, setTodayVideo] = useState<SafetyVideo>(getDailyVideo());
   const [currentDuration, setCurrentDuration] = useState<number | null>(null);
+  const [checklistPercent, setChecklistPercent] = useState<number | null>(null);
+  const [reportsCount, setReportsCount] = useState<number | null>(null);
+  const checklistRef = useRef<number | null>(null);
+  const reportsRef = useRef<number | null>(null);
+  const safetyWriteTimer = useRef<any>(null);
 
   useEffect(() => {
     const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
     const videoIndex = dayOfYear % SAFETY_VIDEOS.length;
     setTodayVideo(SAFETY_VIDEOS[videoIndex]);
   }, []);
+
+  // Fetch user-specific stats (checklist completion % for today and report count)
+  useEffect(() => {
+    if (!userProfile?.id) return;
+
+    const dateKey = (() => {
+      const d = new Date();
+      const shifted = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+      const yyyy = shifted.getFullYear();
+      const mm = String(shifted.getMonth() + 1).padStart(2, '0');
+      const dd = String(shifted.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    })();
+
+    const checklistDocId = `${dateKey}_${userProfile.id}`;
+    const checklistDocRef = doc(db, 'checklists', checklistDocId);
+
+    const computeAndPersist = () => {
+      const pct = checklistRef.current;
+      const rc = reportsRef.current;
+      if (pct === null || rc === null) return; // wait until both available
+      const rcFactor = Math.max(0, 10 - rc) / 10;
+      const score = Math.round(((pct ?? 0) * 0.7) + ((rcFactor * 100) * 0.3));
+
+      // debounce writes to avoid rapid updates
+      if (safetyWriteTimer.current) clearTimeout(safetyWriteTimer.current);
+      safetyWriteTimer.current = setTimeout(() => {
+        FirestoreService.updateUserProfile(userProfile.id, { safetyScore: score }).catch(() => {});
+      }, 1200);
+    };
+
+    const unsubChecklist = onSnapshot(checklistDocRef, (snap) => {
+      if (!snap.exists()) {
+        setChecklistPercent(0);
+        checklistRef.current = 0;
+        computeAndPersist();
+        return;
+      }
+      const data: any = snap.data();
+      let completed = 0;
+      if (data.items && typeof data.items === 'object') {
+        completed = Object.keys(data.items).filter(k => !!data.items[k]).length;
+      } else if (Array.isArray(data.checklist)) {
+        completed = data.checklist.filter((i: any) => i.completed).length;
+      }
+      const role = (userProfile.role || '').toString();
+      const total = ROLE_CHECKLISTS[role]?.length ?? 5;
+      const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+      setChecklistPercent(pct);
+      checklistRef.current = pct;
+      computeAndPersist();
+    }, (err) => {
+      console.warn('Checklist onSnapshot error:', err);
+    });
+
+    const reportsQuery = query(collection(db, 'hazard_reports'), where('userId', '==', userProfile.id));
+    const unsubReports = onSnapshot(reportsQuery, (snap) => {
+      setReportsCount(snap.size);
+      reportsRef.current = snap.size;
+      computeAndPersist();
+    }, (err) => { console.warn('Reports onSnapshot error:', err); });
+
+    return () => {
+      try { unsubChecklist(); } catch (e) {}
+      try { unsubReports(); } catch (e) {}
+      if (safetyWriteTimer.current) clearTimeout(safetyWriteTimer.current);
+    };
+  }, [userProfile?.id]);
 
   const handleEmergencySOS = () => {
     Alert.alert(
@@ -110,11 +187,11 @@ export default function HomeScreen() {
             <Text style={[styles.cardTitle, { fontSize: 20 }]}>Your Safety Score</Text>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>98%</Text>
+                <Text style={styles.statNumber}>{checklistPercent === null ? '—' : `${checklistPercent}%`}</Text>
                 <Text style={styles.statLabel}>Checklists Complete</Text>
               </View>
               <View style={styles.statItem}>
-                <Text style={styles.statNumber}>3</Text>
+                <Text style={styles.statNumber}>{reportsCount === null ? '—' : String(reportsCount)}</Text>
                 <Text style={styles.statLabel}>Reports Done</Text>
               </View>
             </View>

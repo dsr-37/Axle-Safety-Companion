@@ -54,7 +54,7 @@ export default function InsightsScreen() {
       case 'equipment':
         return ClayColors.babyBlue;
       case 'procedures':
-        return ClayColors.lavender;
+        return ClayColors.mintProfile;
       case 'emergency':
         return ClayColors.coral;
       case 'general':
@@ -82,9 +82,9 @@ export default function InsightsScreen() {
   const header = useMemo(() => (
     <View>
       <View style={styles.header}>
-        <Ionicons name="play-circle" size={48} color={ClayColors.mint} />
-        <Text style={styles.title}>Insights</Text>
-        <Text style={styles.subtitle}>Daily safety videos and quick insights</Text>
+        <Ionicons name="play-circle" size={80} color={ClayColors.mintProfile} />
+        <Text style={[styles.title, { fontSize: 28 }]}>Insights</Text>
+        <Text style={[styles.subtitle, { fontSize: 18, marginBottom: 10 }]}>Daily safety videos and quick insights</Text>
         <View style={{ height: 2 }} />
       </View>
 
@@ -146,9 +146,9 @@ export default function InsightsScreen() {
         </View>
       </ClayCard>
 
-      <View style={styles.playlistHeader}>
-        <Text style={styles.playlistTitle}>All Insights</Text>
-        <Text style={styles.playlistSubtitle}>
+      <View style={[styles.playlistHeader, { marginTop: 18 }]}>
+        <Text style={[styles.playlistTitle, { fontSize: 24 }]}>All Insights</Text>
+        <Text style={[styles.playlistSubtitle, { fontSize: 16 }]}>
           {SAFETY_VIDEOS.length} videos available
         </Text>
       </View>
@@ -206,7 +206,7 @@ export default function InsightsScreen() {
                     >
                       <Ionicons
                         name={isActive ? 'pause' : 'play'}
-                        size={16}
+                        size={18}
                         color={ClayColors.white}
                       />
                     </View>
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING,
     paddingTop: SPACING + 8,
     paddingBottom: SPACING * 2,
-    gap: 24,
+    gap: 18,
   },
   header: {
     alignItems: 'center',
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   featuredCard: {
-    paddingVertical: 24,
+    paddingVertical: 28,
     paddingHorizontal: 24,
     gap: 20,
   },
@@ -290,10 +290,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   videoPlayer: {
-    borderRadius: 18,
+    borderRadius: 10,
     overflow: 'hidden',
     alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
   },
   videoInfo: {
     gap: 6,
@@ -344,8 +344,9 @@ const styles = StyleSheet.create({
   },
   activePlaylistItem: {
     borderColor: ClayColors.mint,
-    borderWidth: 3,
-    backgroundColor: ClayTheme.glass.border,
+    borderWidth: 4,
+    borderRadius: 30,
+    backgroundColor: ClayTheme.glass.strong,
   },
   playlistItemContent: {
     flexDirection: 'row',
@@ -381,7 +382,8 @@ const styles = StyleSheet.create({
     color: ClayTheme.textOnDark.secondary,
   },
   statsCard: {
-    paddingVertical: 24,
+    marginTop: 14,
+    paddingVertical: 20,
     paddingHorizontal: 24,
     gap: 20,
   },

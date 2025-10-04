@@ -18,7 +18,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     navigatedRef.current = false;
     try {
-      await login(credentials.email, credentials.password);
+      const result = await login(credentials.email, credentials.password);
       InteractionManager.runAfterInteractions(() => {
         try {
           if (!navigatedRef.current) {
@@ -26,7 +26,13 @@ export default function LoginScreen() {
             // small delay to allow auth state propagation and avoid router race conditions
             setTimeout(() => {
               try {
-                router.replace('/(main)/(tabs)/home');
+                if (result?.isSupervisor) {
+                  // Redirect supervisors to supervisor tabs home. Cast to any because route types
+                  // are generated and may not include dynamic group paths in this build step.
+                  router.replace('/(supervisor)/(tabs)/home' as any);
+                } else {
+                  router.replace('/(main)/(tabs)/home');
+                }
               } catch (navErr) {
                 console.error('Navigation error after login (delayed):', navErr);
               }

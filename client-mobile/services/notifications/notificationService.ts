@@ -5,15 +5,15 @@ import Constants from 'expo-constants';
 // Provide full behavior object to satisfy stricter typings
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // `shouldShowAlert` is deprecated in newer expo-notifications; specify banner/list explicitly
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
     priority: Notifications.AndroidNotificationPriority.HIGH,
-    // Optional fields some typings expect:
-    shouldShowBanner: true,
     shouldShowInForeground: true,
     shouldSetNotificationCenter: true,
-  }) as any, // cast to any to bridge SDK/typings variance across Expo versions
+  }) as any,
 });
 
 export class NotificationService {
@@ -55,11 +55,25 @@ export class NotificationService {
     }
   }
 
-  static async scheduleLocal(title: string, body: string) {
+  static async scheduleLocal(title: string, body: string | object) {
+    // Normalize body so that objects are shown nicely rather than raw JSON
+    const formattedBody = typeof body === 'string' ? body : (() => {
+      try {
+        // Prefer a compact readable summary if known shape
+        const b = body as any;
+        if (b.userName || b.userId) {
+          return `${b.userName || b.userId} • ${b.userRole || ''}` + (b.location ? ` • ${b.location.latitude?.toFixed?.(5) || b.location.lat?.toFixed?.(5) || 'loc'}` : '');
+        }
+        return JSON.stringify(body);
+      } catch (e) {
+        return String(body);
+      }
+    })();
+
     return Notifications.scheduleNotificationAsync({
       content: {
         title,
-        body,
+        body: formattedBody,
         sound: true,
         priority: Notifications.AndroidNotificationPriority.HIGH,
       },
@@ -88,7 +102,8 @@ export class NotificationService {
     });
   }
 
-  static async sendEmergencyAlert(body: string) {
+  static async sendEmergencyAlert(body: string | object) {
+    // Only schedule a local notification on the sender device; format body for readability
     return this.scheduleLocal('🆘 EMERGENCY ALERT', body);
   }
 }

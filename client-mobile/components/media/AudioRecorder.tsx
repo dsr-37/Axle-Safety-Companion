@@ -107,11 +107,34 @@ export const AudioRecorder = forwardRef<any, AudioRecorderProps>(({ onRecordingC
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            setRecordingUri(null);
-            setRecordingDuration(0);
-            // release player state
-            player.replace(null);
+          onPress: async () => {
+            try {
+              // stop playback if playing
+              try {
+                if (player && typeof player.pause === 'function') await player.pause();
+              } catch (e) {
+                // ignore playback pause errors
+                console.warn('Failed to pause player while deleting recording', e);
+              }
+
+              setRecordingUri(null);
+              setRecordingDuration(0);
+
+              // release player state; some player implementations return a promise
+              try {
+                if (player && typeof player.replace === 'function') {
+                  const maybePromise: any = (player as any).replace(null);
+                  if (maybePromise && typeof maybePromise.then === 'function') {
+                    await maybePromise;
+                  }
+                }
+              } catch (err) {
+                // Swallow errors to avoid uncaught promise rejections
+                console.warn('player.replace failed during deleteRecording', err);
+              }
+            } catch (err) {
+              console.warn('Error while deleting recording', err);
+            }
           }
         }
       ]

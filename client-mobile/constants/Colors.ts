@@ -1,7 +1,7 @@
 export const ClayColors = {
   // Material-inspired palette (subtle, vivid accents)
-  lavender: '#655ce0ff', // secondary (was lavender)
-  lavenderLight: '#8aa0f4ff',
+  lavender: '#574de8ff', // secondary (was lavender)
+  lavenderLight: '#7d95f3ff',
   lavenderDark: '#493e90ff',
 
   mint: '#00b57fff', // primary (was mint)
@@ -39,9 +39,10 @@ export const ClayColors = {
   gradientStart: '#2b024dff',
   gradientMid: '#2e0355ff',
   gradientEnd: '#3e1073b8',
-  cardGlass: 'rgba(255, 255, 255, 0.35)',
-  cardGlassStrong: 'rgba(255, 255, 255, 0.44)',
-  cardGlassHighlight: 'rgba(255, 255, 255, 0.5)',
+  cardGlass: 'rgba(255, 255, 255, 0.37)',
+  cardGlassStrong: 'rgba(255, 255, 255, 0.40)',
+  cardGlassHighlight: 'rgba(255, 255, 255, 0.55)',
+  cardGlassBorder: 'rgba(255, 255, 255, 0.24)',
 };
 
 export const ClayTheme = {
@@ -72,7 +73,8 @@ export const ClayTheme = {
   },
   glass: {
     surface: ClayColors.cardGlass,
-    border: ClayColors.cardGlassStrong,
+    strong: ClayColors.cardGlassStrong,
+    border: ClayColors.cardGlassBorder,
     highlight: ClayColors.cardGlassHighlight,
   },
 };

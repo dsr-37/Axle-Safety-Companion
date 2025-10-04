@@ -6,6 +6,7 @@ import { OfflineProvider } from '../contexts/OfflineContext';
 import { ClayColors } from '../constants/Colors';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { useEffect } from 'react';
+import SosPulseOverlay from '../components/ui/SosPulseOverlay';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -16,22 +17,13 @@ export default function RootLayout() {
       <AuthProvider>
         <UserProvider>
           <OfflineProvider>
-            <Stack
-              screenOptions={{
-                headerStyle: {
-                  backgroundColor: ClayColors.lightGray,
-                },
-                headerTintColor: ClayColors.black,
-                headerTitleStyle: {
-                  fontWeight: 'bold',
-                },
-              }}
-            >
-              <Stack.Screen name="index" options={{ headerShown: false }} />
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="(main)" options={{ headerShown: false }} />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(main)" />
             </Stack>
             <StatusBar style="dark" backgroundColor={ClayColors.lightGray} />
+            <SosPulseOverlay />
           </OfflineProvider>
         </UserProvider>
       </AuthProvider>

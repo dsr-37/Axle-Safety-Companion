@@ -2,10 +2,11 @@ import { StorageService } from './asyncStorage';
 import { FirestoreService } from '../firebase/firestore';
 import { StorageService as FirebaseStorageService } from '../firebase/storage';
 import NetInfo from '@react-native-community/netinfo';
+import { Alert } from 'react-native';
 
 interface OfflineAction {
   id: string;
-  type: 'checklist' | 'hazard_report' | 'profile_update';
+  type: 'checklist' | 'hazard_report' | 'profile_update' | 'checklist_item' | 'emergency_sos' | 'emergency_ack';
   data: any;
   timestamp: number;
   retryCount: number;
@@ -92,6 +93,16 @@ export class OfflineSyncService {
           action.data.checklist
         );
         break;
+
+      case 'checklist_item':
+        // data: { userId, checklistId, action: 'mark'|'unmark', date? }
+        if (!action.data) throw new Error('Missing checklist_item data');
+        if (action.data.action === 'mark') {
+          await FirestoreService.markChecklistItem(action.data.userId, action.data.checklistId, action.data.date);
+        } else {
+          await FirestoreService.unmarkChecklistItem(action.data.userId, action.data.checklistId, action.data.date);
+        }
+        break;
         
       case 'hazard_report':
         // For queued hazard reports: upload media to Cloudinary then save to Firestore (hazard_reports)
@@ -135,14 +146,76 @@ export class OfflineSyncService {
           }
         }
 
-        // Attach uploaded media metadata to payload and submit to Firestore
-        reportPayload.media = {
-          images: uploadedImages.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes })),
-          videos: uploadedVideos.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes, duration: u.duration })),
-          audio: uploadedAudio ? { url: uploadedAudio.url, publicId: uploadedAudio.publicId, bytes: uploadedAudio.bytes, duration: uploadedAudio.duration } : undefined,
-        };
+        // Attach uploaded media metadata to payload, but only include keys that are present
+        const media: any = {};
+        if (uploadedImages.length > 0) {
+          media.images = uploadedImages.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes }));
+        }
+        if (uploadedVideos.length > 0) {
+          media.videos = uploadedVideos.map(u => ({ url: u.url, publicId: u.publicId, width: u.width, height: u.height, bytes: u.bytes, duration: u.duration }));
+        }
+        if (uploadedAudio) {
+          media.audio = { url: uploadedAudio.url, publicId: uploadedAudio.publicId, bytes: uploadedAudio.bytes, duration: uploadedAudio.duration };
+        }
 
-        await FirestoreService.submitHazardReportCloud(reportPayload);
+        if (Object.keys(media).length > 0) {
+          reportPayload.media = media;
+        } else if (reportPayload.media) {
+          // ensure no undefined media key remains
+          delete reportPayload.media;
+        }
+
+        // Remove any undefined top-level fields to avoid Firestore rejecting the document
+        const cleanedPayload: any = {};
+        Object.keys(reportPayload || {}).forEach((k) => {
+          const v = (reportPayload as any)[k];
+          if (v !== undefined) cleanedPayload[k] = v;
+        });
+
+        try {
+          await FirestoreService.submitHazardReportCloud(cleanedPayload);
+        } catch (err: any) {
+          console.error('Failed to submit queued hazard report after sanitization:', err);
+          // If this is an invalid-data error related to undefined fields, inform the user and drop the action.
+          const message = err?.message || String(err);
+          if (message.includes('Unsupported field value') || message.includes('invalid data') || message.includes('undefined')) {
+            try {
+              Alert.alert(
+                'Report Upload Failed',
+                'A saved report could not be submitted because it contains unsupported or missing fields. The report will be removed from the upload queue. Please recreate the report in the app if needed.',
+                [{ text: 'OK' }]
+              );
+            } catch (aErr) {
+              // ignore alert failure in non-UI contexts
+            }
+            // throw to let the queue handler mark it as handled/removed
+            throw new Error('Dropping invalid queued report');
+          }
+          // For other errors, rethrow so the action will be retried according to retry policy
+          throw err;
+        }
+        break;
+
+      case 'emergency_sos':
+        // data: { payload }
+        if (!action.data || !action.data.payload) throw new Error('Missing emergency_sos payload');
+        try {
+          await FirestoreService.createEmergencyAlert(action.data.payload);
+        } catch (err) {
+          console.error('Failed to submit queued emergency_sos:', err);
+          throw err;
+        }
+        break;
+
+      case 'emergency_ack':
+        // data: { alertId, acknowledger }
+        if (!action.data || !action.data.alertId) throw new Error('Missing emergency_ack data');
+        try {
+          await FirestoreService.acknowledgeEmergencyAlert(action.data.alertId, action.data.acknowledger);
+        } catch (err) {
+          console.error('Failed to submit queued emergency_ack:', err);
+          throw err;
+        }
         break;
         
       case 'profile_update':

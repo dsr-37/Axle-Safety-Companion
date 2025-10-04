@@ -13,36 +13,25 @@ export default function SignupScreen() {
   const { register } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const navigatedRef = useRef(false);
+  const [supervisorHint, setSupervisorHint] = useState<string | null>(null);
+  const supervisorCheckTimeout = useRef<any>(null);
 
   const handleSignup = async (data: { name: string; email: string; password: string }) => {
     setIsLoading(true);
     try {
       navigatedRef.current = false;
-      // Check if the email already has an auth account in Firebase first
-      try {
-        // Import here to avoid circular dependency at module load time
-        const { AuthService } = await import('../../services/firebase/auth');
-        const exists = await AuthService.emailHasAccount(data.email);
-        if (exists) {
-          throw new Error('An account already exists with this email address');
-        }
-      } catch (checkErr) {
-        // If the helper threw an error that's a string/Error, surface it; otherwise continue to attempt register which will error
-        if (checkErr instanceof Error && /already exists/.test(checkErr.message)) {
-          throw checkErr;
-        }
-        // Otherwise, ignore and let register attempt proceed (network errors etc.)
-      }
-
-      await register(data.name, data.email, data.password);
-      // Navigate to role selection similarly to the login flow, but target the role page
+      const result = await register(data.name, data.email, data.password);
       InteractionManager.runAfterInteractions(() => {
         try {
           if (!navigatedRef.current) {
             navigatedRef.current = true;
             setTimeout(() => {
               try {
-                router.replace('/(auth)/role-selection');
+                if (result?.isSupervisor) {
+                  router.replace('/(supervisor)/(tabs)/home' as any);
+                } else {
+                  router.replace('/(auth)/role-selection');
+                }
               } catch (navErr) {
                 console.error('Navigation error after signup (delayed):', navErr);
               }
@@ -58,6 +47,25 @@ export default function SignupScreen() {
       setIsLoading(false);
     }
   };
+
+    const onEmailChange = async (email: string) => {
+      // debounce rapid typing
+      if (supervisorCheckTimeout.current) clearTimeout(supervisorCheckTimeout.current);
+      supervisorCheckTimeout.current = setTimeout(async () => {
+        try {
+          const { FirestoreService } = await import('../../services/firebase/firestore');
+          const sup = await FirestoreService.getSupervisorDocByEmail(email);
+          if (sup) {
+            setSupervisorHint(`This email is registered as a supervisor`);
+          } else {
+            setSupervisorHint(null);
+          }
+        } catch (err) {
+          console.warn('Supervisor lookup failed:', err);
+          setSupervisorHint(null);
+        }
+      }, 350);
+    };
 
   return (
     <GradientBackground>
@@ -76,7 +84,10 @@ export default function SignupScreen() {
             </View>
 
             <ClayCard style={styles.formCard}>
-              <SignupForm onSubmit={handleSignup} isLoading={isLoading} />
+              <SignupForm onSubmit={handleSignup} isLoading={isLoading} onEmailChange={onEmailChange} />
+              {supervisorHint ? (
+                <Text style={{ color: 'rgba(255,255,255,0.9)', marginTop: 8, textAlign: 'center' }}>{supervisorHint}</Text>
+              ) : null}
             </ClayCard>
           </ScrollView>
         </KeyboardAvoidingView>

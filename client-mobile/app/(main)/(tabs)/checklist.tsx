@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ClayCard } from '../../../components/ui/ClayCard';
@@ -8,6 +8,8 @@ import { ClayColors, ClayTheme } from '../../../constants/Colors';
 import { useAuth } from '../../../contexts/AuthContext';
 import { ROLE_CHECKLISTS, ChecklistItem } from '../../../constants/Checklists';
 import { StorageService } from '../../../services/storage/asyncStorage';
+import { FirestoreService } from '../../../services/firebase/firestore';
+import { OfflineSyncService } from '../../../services/storage/offlineSync';
 import { Ionicons } from '@expo/vector-icons';
 import { GradientBackground } from '../../../components/ui/GradientBackground';
 
@@ -17,20 +19,16 @@ export default function ChecklistScreen() {
   const [completedCount, setCompletedCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadTodaysChecklist();
-  }, [userProfile?.role]);
-
-  const loadTodaysChecklist = async () => {
+  const loadTodaysChecklist = useCallback(async () => {
     if (!userProfile?.role) return;
 
     try {
       const today = new Date().toDateString();
       const storageKey = `checklist_${userProfile.id}_${today}`;
-      
+
       // Try to load saved progress
       const savedChecklist = await StorageService.getItem(storageKey);
-      
+
       if (savedChecklist) {
         const parsedChecklist = JSON.parse(savedChecklist) as ChecklistItem[];
         setChecklist(parsedChecklist);
@@ -46,7 +44,11 @@ export default function ChecklistScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [userProfile?.role, userProfile?.id]);
+
+  useEffect(() => {
+    loadTodaysChecklist();
+  }, [loadTodaysChecklist]);
 
   const saveChecklistProgress = async (updatedChecklist: ChecklistItem[]) => {
     try {
@@ -72,6 +74,27 @@ export default function ChecklistScreen() {
 
     // Save progress
     await saveChecklistProgress(updatedChecklist);
+
+    // Persist single-item change to Firestore (optimistic local update above)
+    if (!userProfile) return;
+    try {
+      const toggled = updatedChecklist.find(i => i.id === itemId);
+      if (!toggled) return;
+      if (toggled.completed) {
+        await FirestoreService.markChecklistItem(userProfile.id, itemId);
+      } else {
+        await FirestoreService.unmarkChecklistItem(userProfile.id, itemId);
+      }
+    } catch (err) {
+      // Log the persistence error and attempt to enqueue for offline sync
+      console.warn('Checklist item persistence failed, will attempt to queue:', err);
+      try {
+        const isCompleted = updatedChecklist.find(i => i.id === itemId)?.completed ?? false;
+        await OfflineSyncService.addToQueue({ type: 'checklist_item', data: { userId: userProfile.id, checklistId: itemId, action: isCompleted ? 'mark' : 'unmark' } });
+      } catch (queueErr) {
+        console.error('Failed to queue checklist action:', queueErr);
+      }
+    }
 
     // Show completion message when all items are checked
     if (newCompletedCount === updatedChecklist.length && newCompletedCount > 0) {
@@ -203,6 +226,24 @@ export default function ChecklistScreen() {
                           setChecklist(allCompleted);
                           setCompletedCount(allCompleted.length);
                           saveChecklistProgress(allCompleted);
+
+                          // Persist bulk marks to Firestore; enqueue if fails
+                          (async () => {
+                            try {
+                              const ids = allCompleted.map(i => i.id);
+                              if (userProfile) {
+                                // FirestoreService may not have bulk helpers; fallback to parallel single-item calls
+                                await Promise.all(ids.map(iid => FirestoreService.markChecklistItem(userProfile.id, iid)));
+                              }
+                            } catch (err) {
+                              console.warn('Bulk mark failed, enqueueing for offline sync:', err);
+                              try {
+                                await OfflineSyncService.addToQueue({ type: 'checklist', data: { userId: userProfile?.id, date: new Date().toDateString(), checklist: allCompleted } });
+                              } catch (queueErr) {
+                                console.error('Failed to queue bulk checklist action:', queueErr);
+                              }
+                            }
+                          })();
                         }
                       }
                     ]
@@ -229,6 +270,23 @@ export default function ChecklistScreen() {
                         setChecklist(resetChecklist);
                         setCompletedCount(0);
                         saveChecklistProgress(resetChecklist);
+
+                        (async () => {
+                            try {
+                            const ids = resetChecklist.map(i => i.id);
+                            if (userProfile) {
+                              // Use parallel single-item unmark calls
+                              await Promise.all(ids.map(iid => FirestoreService.unmarkChecklistItem(userProfile.id, iid)));
+                            }
+                          } catch (err) {
+                            console.warn('Bulk reset failed, enqueueing for offline sync:', err);
+                            try {
+                              await OfflineSyncService.addToQueue({ type: 'checklist', data: { userId: userProfile?.id, date: new Date().toDateString(), checklist: resetChecklist } });
+                            } catch (queueErr) {
+                              console.error('Failed to queue bulk checklist reset action:', queueErr);
+                            }
+                          }
+                        })();
                       }
                     }
                   ]

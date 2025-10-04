@@ -100,45 +100,95 @@ export default function HazardReportScreen() {
   };
 
   const handleSubmitReport = async () => {
-    if (!description.trim() && !audioUri && imageUris.length === 0 && videoUris.length === 0) {
-      Alert.alert('Missing Information', 'Please provide at least one form of hazard description');
+    // Enforce required media: must have an audio note and at least one visual (image or video)
+    if (!audioUri) {
+      Alert.alert('Audio Required', 'Please record a voice note before submitting the report.');
+      return;
+    }
+
+    if (imageUris.length === 0 && videoUris.length === 0) {
+      Alert.alert('Visual Evidence Required', 'Please capture at least one photo or video to submit the report.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-  // 1) Upload media to Cloudinary
+      // 1) Upload media to Cloudinary with user-friendly failure handling
       const uploadedImages: any[] = [];
       const uploadedVideos: any[] = [];
       let uploadedAudio: any | undefined;
 
-      // Upload images (compress + upload)
-      await Promise.all(imageUris.map(async (uri) => {
-        try {
-          const res = await CloudinaryService.uploadImage(uri);
-          uploadedImages.push(res);
-        } catch (err) {
-          console.warn('Image upload failed for', uri, err);
+      // When media upload fails we only allow retry or cancel. Do NOT allow continuing without the files
+      const promptUserOnMediaFailure = (failedCount: number) => new Promise<'retry'|'cancel'>((resolve) => {
+        Alert.alert(
+          'Media upload failed',
+          `Failed to upload ${failedCount} media file${failedCount > 1 ? 's' : ''}. Would you like to retry or cancel submission?`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve('cancel') },
+            { text: 'Retry', onPress: () => resolve('retry') },
+          ],
+        );
+      });
+
+      // Helper to attempt uploads with retry/continue/cancel UI
+      const tryUploadList = async (uris: string[], uploader: (uri: string) => Promise<any>, targetArray: any[], label: string) => {
+        let pending = [...uris];
+        while (pending.length > 0) {
+          const failed: string[] = [];
+          await Promise.all(pending.map(async (uri) => {
+            try {
+              const res = await uploader(uri);
+              targetArray.push(res);
+            } catch (err) {
+              console.warn(`${label} upload failed for`, uri, err);
+              failed.push(uri);
+            }
+          }));
+
+          if (failed.length === 0) break; // success
+
+          const choice = await promptUserOnMediaFailure(failed.length);
+          if (choice === 'cancel') throw new Error('User cancelled media upload');
+          // retry: set pending to failed list and loop again
+          pending = failed;
         }
-      }));
+      };
+
+      // Upload images (compress + upload)
+      try {
+        await tryUploadList(imageUris, (uri) => CloudinaryService.uploadImage(uri), uploadedImages, 'Image');
+      } catch (err) {
+        console.warn('Image upload flow cancelled by user:', err);
+        setIsSubmitting(false);
+        return;
+      }
 
       // Upload videos (upload as-is)
-      await Promise.all(videoUris.map(async (uri) => {
-        try {
-          const res = await CloudinaryService.uploadVideo(uri);
-          uploadedVideos.push(res);
-        } catch (err) {
-          console.warn('Video upload failed for', uri, err);
-        }
-      }));
+      try {
+        await tryUploadList(videoUris, (uri) => CloudinaryService.uploadVideo(uri), uploadedVideos, 'Video');
+      } catch (err) {
+        console.warn('Video upload flow cancelled by user:', err);
+        setIsSubmitting(false);
+        return;
+      }
 
-      // Upload audio (single)
+      // Upload audio (single) - do not allow continuing without audio
       if (audioUri) {
-        try {
-          uploadedAudio = await CloudinaryService.uploadAudio(audioUri);
-        } catch (err) {
-          console.warn('Audio upload failed', err);
+        let audioPending = [audioUri];
+        while (audioPending.length > 0) {
+          try {
+            uploadedAudio = await CloudinaryService.uploadAudio(audioPending[0]);
+            break;
+          } catch (err) {
+            const choice = await promptUserOnMediaFailure(1);
+            if (choice === 'cancel') {
+              console.warn('Audio upload cancelled by user');
+              setIsSubmitting(false);
+              return;
+            }
+            // else retry loop
+          }
         }
       }
 
@@ -164,13 +214,34 @@ export default function HazardReportScreen() {
       };
 
       // 3) Save to Firestore 'hazard_reports' collection
-      const id = await FirestoreService.submitHazardReportCloud(payload);
+      try {
+        const id = await FirestoreService.submitHazardReportCloud(payload);
+        Alert.alert(
+          'Report Submitted',
+          'Your hazard report has been submitted successfully. Safety personnel will be notified immediately.',
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+      } catch (submitErr: any) {
+        console.error('Error submitting report to Firestore:', submitErr);
+        // Fallback: enqueue the report and local media for offline processing
+        try {
+          const mediaFiles: any[] = [];
+          imageUris.forEach((uri, idx) => mediaFiles.push({ type: 'image', uri, index: idx }));
+          videoUris.forEach((uri, idx) => mediaFiles.push({ type: 'video', uri, index: idx }));
+          if (audioUri) mediaFiles.push({ type: 'audio', uri: audioUri });
 
-      Alert.alert(
-        'Report Submitted',
-        'Your hazard report has been submitted successfully. Safety personnel will be notified immediately.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+          await OfflineSyncService.addToQueue({ type: 'hazard_report', data: { report: payload, mediaFiles } });
+
+          Alert.alert(
+            'Saved for Upload',
+            'We could not submit the report right now, but it has been saved and will be uploaded when internet is available.',
+            [{ text: 'OK', onPress: () => router.back() }]
+          );
+        } catch (queueErr) {
+          console.error('Failed to enqueue failed hazard report:', queueErr);
+          Alert.alert('Submission Failed', 'Unable to submit or save your report. Please contact your supervisor directly.');
+        }
+      }
     } catch (error) {
       console.error('Error submitting report:', error);
       Alert.alert('Submission Failed', 'Please try again or contact your supervisor directly.');

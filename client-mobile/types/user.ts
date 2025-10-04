@@ -20,6 +20,8 @@ export interface UserProfile {
   createdAt: Date;
   lastActive: Date;
   isActive?: boolean;
+  // 0-100 safety score (computed from checklist completion and report history)
+  safetyScore?: number;
 }
 
 export interface AppSettings {

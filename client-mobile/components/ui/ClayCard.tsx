@@ -100,6 +100,7 @@ const styles = StyleSheet.create({
     backgroundColor: ClayTheme.glass.surface,
     borderWidth: 1,
     borderColor: ClayTheme.glass.border,
+    borderRadius: 26,
   },
   overlayLayer: {},
   content: {

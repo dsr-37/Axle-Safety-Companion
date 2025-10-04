@@ -5,21 +5,18 @@ import { router } from 'expo-router';
 import { ClayCard } from '../../../components/ui/ClayCard';
 import { ClayButton } from '../../../components/ui/ClayButton';
 import { ClayInput } from '../../../components/ui/ClayInput';
-import { ClayModal } from '../../../components/ui/ClayModal';
 import { GradientBackground } from '../../../components/ui/GradientBackground';
 import { ClayColors, ClayTheme } from '../../../constants/Colors';
 import { useAuth } from '../../../contexts/AuthContext';
-import { WORKER_ROLES } from '../../../constants/Roles';
 import { Ionicons } from '@expo/vector-icons';
 
 const SPACING = 20;
 
-export default function ProfileScreen() {
-  const { userProfile, updateUserProfile, logout, deleteAccount } = useAuth();
+export default function SupervisorProfileScreen() {
+  const { userProfile, updateUserProfile, logout } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  
   const [editForm, setEditForm] = useState({
-    name: userProfile?.name || '',
-    employeeId: userProfile?.employeeId || '',
     phoneNumber: userProfile?.phoneNumber || '',
   });
 
@@ -57,35 +54,57 @@ export default function ProfileScreen() {
     );
   };
 
-  // Role can no longer be changed from profile. Users must delete account and re-signup.
-
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deletePassword, setDeletePassword] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
-  const confirmDelete = () => setDeleteModalVisible(true);
-
-  const performDelete = async () => {
-    setIsDeleting(true);
-    try {
-      await deleteAccount(deletePassword);
-      // Show success and navigate to signup after 250ms
-      Alert.alert('Account Deleted', 'Your account has been deleted. You will be redirected to Sign Up.');
-      setTimeout(() => router.replace('/(auth)/signup'), 250);
-    } catch (err: any) {
-      console.error('Delete account failed', err);
-      Alert.alert('Delete Failed', err.message || 'Unable to delete account. Please check your password and try again.');
-    } finally {
-      setIsDeleting(false);
-      setDeletePassword('');
-      setDeleteModalVisible(false);
-    }
+  const supervisorRoleInfo = {
+    icon: 'shield-checkmark-outline',
+    title: 'Supervisor',
+    description: 'Oversees site safety, manages hazard reports, and monitors team compliance.'
   };
 
-  const getRoleInfo = () => {
-    return WORKER_ROLES.find(role => role.id === userProfile?.role);
-  };
+  // Dev helper: recursively wrap any raw string/number children in <Text> to avoid RN console error
+  // "Text strings must be rendered within a <Text> component." This preserves original layout
+  // and only affects screens during development.
+  const SafeTextWrap: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    // parentIsText indicates whether the current traversal context is inside a <Text> element
+    const wrap = (node: any, key?: any, parentIsText = false): any => {
+      if (node === null || node === undefined || typeof node === 'boolean') return node;
 
-  const roleInfo = getRoleInfo();
+      // If node is primitive and we're already inside a Text, it's fine — don't wrap or log
+      if ((typeof node === 'string' || typeof node === 'number') && parentIsText) {
+        return node;
+      }
+
+      if (typeof node === 'string' || typeof node === 'number') {
+        // Dev logging to help identify which component is yielding raw text that would otherwise be
+        // a direct child of a non-Text element (this is the real problematic case)
+        try {
+          if ((global as any).__DEV__) {
+            const stack = new Error().stack?.split('\n').slice(2, 6).join('\n');
+            // eslint-disable-next-line no-console
+            console.debug('[SafeTextWrap] wrapping primitive child', { value: String(node), key, stack });
+          }
+        } catch (e) {
+          // ignore logging errors in dev helper
+        }
+        return <Text key={key}>{String(node)}</Text>;
+      }
+
+      if (Array.isArray(node)) return node.map((n, i) => wrap(n, i, parentIsText));
+
+      if (React.isValidElement(node)) {
+        // If the element has children, recursively wrap them. Detect if this element is a Text
+        // so children inside it are treated as parentIsText = true.
+        const props: any = (node as any).props || {};
+        const isTextElement = (node.type === Text) || (node.type && (node.type as any).displayName === 'Text');
+        const wrappedChildren = props.children ? wrap(props.children, undefined, !!isTextElement) : props.children;
+        // Preserve element and props
+        return React.cloneElement(node as any, { ...(node as any).props, key: (node as any).key ?? key }, wrappedChildren);
+      }
+
+      return node;
+    };
+
+    return <>{wrap(children)}</>;
+  };
 
   return (
     <GradientBackground>
@@ -94,50 +113,36 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.contentContainer}
         >
+          <SafeTextWrap>
           <View style={styles.header}>
             <View style={styles.avatarContainer}>
               <Ionicons name="person-circle" size={80} color={ClayColors.mintProfile} />
             </View>
-            <Text style={[styles.userName, { fontSize: 28 }]}>{userProfile?.name || 'Worker'}</Text>
-            <Text style={[styles.userRole, { fontSize: 18 }]}>{roleInfo?.title || userProfile?.role || 'Crew Member'}</Text>
+            <Text style={[styles.userName, { fontSize: 28 }]}>{userProfile?.name || 'Supervisor'}</Text>
+            <Text style={[styles.userRole, { fontSize: 18 }]}>{supervisorRoleInfo.title}</Text>
           </View>
 
           <ClayCard style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { textAlign: 'center', fontSize: 22 }]}>Personal Information</Text>
-            <ClayButton
-              title={isEditing ? 'Cancel' : 'Edit'}
-              variant="primary"
-              size="small"
-              fullWidth={false}
-              style={styles.sectionAction}
-              onPress={() => {
-                if (isEditing) {
-                  setEditForm({
-                    name: userProfile?.name || '',
-                    employeeId: userProfile?.employeeId || '',
-                    phoneNumber: userProfile?.phoneNumber || '',
-                  });
-                }
-                setIsEditing(!isEditing);
-              }}
-            />
-          </View>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { textAlign: 'center', fontSize: 22 }]}>Personal Information</Text>
+              <ClayButton
+                title={isEditing ? 'Cancel' : 'Edit'}
+                variant="primary"
+                size="small"
+                fullWidth={false}
+                style={styles.sectionAction}
+                onPress={() => {
+                  if (isEditing) {
+                    setEditForm({ phoneNumber: userProfile?.phoneNumber || '' });
+                  }
+                  setIsEditing(!isEditing);
+                }}
+              />
+            </View>
 
             {isEditing ? (
               <View style={styles.editForm}>
-                <ClayInput
-                  label="Full Name"
-                  value={editForm.name}
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, name: text }))}
-                  placeholder="Enter your full name"
-                />
-                <ClayInput
-                  label="Employee ID"
-                  value={editForm.employeeId}
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, employeeId: text }))}
-                  placeholder="Enter your employee ID"
-                />
+                {/* ONLY PHONE NUMBER IS EDITABLE */}
                 <ClayInput
                   label="Phone Number"
                   value={editForm.phoneNumber}
@@ -158,36 +163,36 @@ export default function ProfileScreen() {
                   <Text style={styles.infoLabel}>Full Name</Text>
                   <Text style={styles.infoValue}>{userProfile?.name || 'Not set'}</Text>
                 </View>
+                 <View style={styles.infoItem}>
+                  <Text style={styles.infoLabel}>Email</Text>
+                  <Text style={styles.infoValue}>{userProfile?.email || 'Not set'}</Text> {/* <-- NOW THIS WILL WORK */}
+                </View>
                 <View style={styles.infoItem}>
-                  <Text style={styles.infoLabel}>Employee ID</Text>
-                  <Text style={styles.infoValue}>{userProfile?.employeeId || 'Not set'}</Text>
+                  <Text style={[styles.infoLabel, { marginTop: -20 }]}>Department</Text>
+                  <Text style={styles.infoValue}>{'Site Supervision'}</Text> 
                 </View>
                 <View style={styles.infoItem}>
                   <Text style={styles.infoLabel}>Phone Number</Text>
                   <Text style={styles.infoValue}>{userProfile?.phoneNumber || 'Not set'}</Text>
-                </View>
-              </View>
-            )}
+                    </View>
+                  </View>
+                )}
           </ClayCard>
 
+              </SafeTextWrap>
+
           <ClayCard style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { textAlign: 'center', fontSize: 22 }]}>Roles & Responsibilities</Text>
-          </View>
-          
-          {roleInfo && (
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { textAlign: 'center', fontSize: 22 }]}>Roles & Responsibilities</Text>
+            </View>
             <View style={styles.roleInfo}>
               <View style={styles.roleHeader}>
-                <Ionicons name={roleInfo.icon as any} size={32} color={ClayColors.mint} />
-                <Text style={styles.roleTitle}>{roleInfo.title}</Text>
+                <Ionicons name={supervisorRoleInfo.icon as any} size={32} color={ClayColors.mint} />
+                <Text style={styles.roleTitle}>{supervisorRoleInfo.title}</Text>
               </View>
-              <Text style={[styles.roleDescription, { fontSize: 15 }]}>{roleInfo.description}</Text>
+              <Text style={[styles.roleDescription, { fontSize: 15 }]}>{supervisorRoleInfo.description}</Text>
             </View>
-          )}
-          <Text style={[styles.roleNotice, { marginTop: -2, fontSize: 13 }]}>
-            To change your role you must delete your account and sign up again with the same email.
-          </Text>
-        </ClayCard>
+          </ClayCard>
 
           <ClayCard style={styles.sectionCard}>
           <Text style={[styles.sectionTitle, { textAlign: 'center', fontSize: 22 }]}>App Preferences</Text>
@@ -283,35 +288,13 @@ export default function ProfileScreen() {
               icon={<Ionicons name="log-out" size={20} color={ClayColors.white} />}
             />
           </ClayCard>
-          <ClayCard style={[styles.logoutCard, { marginTop: 8 }] }>
-            <ClayButton
-              title="Delete Account"
-              variant="danger"
-              size="medium"
-              onPress={confirmDelete}
-              icon={<Ionicons name="trash" size={18} color={ClayColors.white} />}
-            />
-          </ClayCard>
-
-          {deleteModalVisible && (
-            <ClayModal visible={deleteModalVisible} onClose={() => setDeleteModalVisible(false)}>
-              <View style={{ gap: 12, backgroundColor: '#272727ff', padding: 25, borderRadius: 10 }}>
-                <Text style={{ fontSize: 18, fontWeight: '700', color: ClayTheme.textOnDark.primary }}>Delete Account</Text>
-                <Text style={{ color: ClayTheme.textOnDark.secondary }}>This action is permanent. To delete your account, confirm by entering your password below.</Text>
-                <ClayInput label="Password" value={deletePassword} onChangeText={setDeletePassword} secureTextEntry />
-                <View style={{ flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                  <ClayButton title="Cancel" variant="secondary" onPress={() => setDeleteModalVisible(false)} />
-                  <ClayButton title={isDeleting ? 'Deleting...' : 'Delete'} variant="danger" onPress={performDelete} />
-                </View>
-              </View>
-            </ClayModal>
-          )}
         </ScrollView>
       </SafeAreaView>
     </GradientBackground>
   );
 }
 
+// NOTE: Most styles are reused from the original profile screen for consistency
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -354,6 +337,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     flexDirection: 'column',
+    justifyContent: 'space-between',
     alignItems: 'center',
     gap: 16,
   },
@@ -373,7 +357,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   infoList: {
-    gap: 12,
+    gap: 16,
   },
   infoItem: {
     gap: 4,
@@ -405,12 +389,6 @@ const styles = StyleSheet.create({
     color: ClayTheme.textOnDark.secondary,
     lineHeight: 20,
   },
-  roleNotice: {
-    marginTop: 8,
-    fontSize: 12,
-    color: ClayTheme.textOnDark.muted,
-    lineHeight: 18,
-  },
   preferenceList: {
     gap: 16,
   },
@@ -439,6 +417,8 @@ const styles = StyleSheet.create({
   appActions: {
     flexDirection: 'column',
     gap: 12,
+    marginTop: 12,
+    justifyContent: 'space-between',
   },
   appActionButton: {
     flex: 1,

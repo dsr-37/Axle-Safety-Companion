@@ -8,6 +8,8 @@ import { ClayColors, ClayTheme } from '../../constants/Colors';
 import { useAuth } from '../../contexts/AuthContext';
 import { LocationService } from '../../services/location/locationService';
 import { NotificationService } from '../../services/notifications/notificationService';
+import { FirestoreService } from '../../services/firebase/firestore';
+import { OfflineSyncService } from '../../services/storage/offlineSync';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 
@@ -79,8 +81,21 @@ export default function EmergencySOSScreen() {
         type: 'emergency_sos',
       };
 
-      // Send to supervisors via Firebase
-      await NotificationService.sendEmergencyAlert(JSON.stringify(emergencyData)); // Convert object to string
+      // Persist to Firestore so supervisors can see it in real-time
+      try {
+        const isOnline = await OfflineSyncService.checkInternetConnection();
+        if (isOnline) {
+          await FirestoreService.createEmergencyAlert(emergencyData);
+        } else {
+          // enqueue for later sync and still show success message
+          await OfflineSyncService.addToQueue({ type: 'hazard_report', data: { report: { ...emergencyData, type: 'emergency_sos' }, mediaFiles: [] } });
+        }
+      } catch (err) {
+        console.warn('Failed to persist emergency alert to Firestore or enqueue:', err);
+      }
+
+  // Also schedule a local notification on the sender device for confirmation (friendly body)
+  await NotificationService.sendEmergencyAlert({ userName: emergencyData.userName, userRole: emergencyData.userRole, location: emergencyData.location });
 
       // Try to make emergency call if possible
       const emergencyNumber = 'tel:+112'; // Replace with actual emergency number
@@ -171,6 +186,7 @@ export default function EmergencySOSScreen() {
               title="Cancel Alert"
               variant="secondary"
               onPress={cancelEmergency}
+              style={styles.cancelButton}
             />
           </ClayCard>
         ) : (
@@ -301,6 +317,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: ClayColors.white,
     marginBottom: 16,
+  },
+  cancelButton: { // <-- ADD THIS STYLE OBJECT
+    minWidth: 200,
+    alignSelf: 'center',
   },
   numberButton: {
     alignSelf: 'stretch',
