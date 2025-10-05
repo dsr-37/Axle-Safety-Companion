@@ -1,0 +1,79 @@
+{
+  "expo": {
+    "name": "Axle",
+    "slug": "axle",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "axle",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash_icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff",
+      "dark": {
+        "backgroundColor": "#000000"
+      }
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to camera to capture hazard photos",
+        "NSMicrophoneUsageDescription": "This app needs access to microphone to record voice notes",
+        "NSLocationWhenInUseUsageDescription": "This app needs location access for emergency SOS functionality"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/android_icon_foreground.png",
+        "backgroundImage": "./assets/images/android_icon_background.png",
+        "monochromeImage": "./assets/images/android_icon_monochrome.png",
+        "backgroundColor": "#f0f4f8"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.WAKE_LOCK",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.dsrexpo37.axle"
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png",
+      "output": "static"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff"
+        }
+      ],
+      "expo-camera",
+      "expo-media-library",
+      "expo-location",
+      "expo-router",
+      "expo-web-browser",
+      "expo-font",
+      "expo-splash-screen",
+      "expo-audio",
+      "expo-video"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
